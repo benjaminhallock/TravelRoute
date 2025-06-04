@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Address Inspector</title>
+    <link rel="stylesheet" href="style.css">    <!-- Leaflet.js CDN -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <!-- Leaflet Routing Machine -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <!-- SheetJS CDN for Excel reading -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Address Inspector</h1>
+          <!-- Excel Upload Section -->
+        <div class="upload-section">
+            <label for="excel-file">Upload Excel File with Addresses:</label>
+            <input type="file" id="excel-file" accept=".xlsx,.xls,.csv" />
+            <button id="import-excel" class="action-button">Import Excel</button>
+            <button id="optimize-route" class="action-button" style="display: none;">Optimize Route</button>
+            <div id="route-info" style="margin-top: 10px; display: none;">
+                <strong>Total Route Distance: </strong><span id="route-distance">0</span> miles<br>
+                <strong>Estimated Time: </strong><span id="route-time">0</span> minutes
+            </div>
+        </div>
+        
+        <!-- Excel Data Table -->
+        <div class="excel-table-container" style="display: none;">
+            <h3>Excel Data</h3>
+            <div class="excel-table-wrapper">
+                <table id="excel-table" class="excel-table">
+                    <thead id="excel-table-head"></thead>
+                    <tbody id="excel-table-body"></tbody>
+                </table>
+            </div>
+            <button id="process-addresses" class="action-button">Process Addresses</button>
+        </div>
+
+        <!-- Address List -->
+        <div class="address-list-container">
+            <h3>Addresses</h3>
+            <div id="address-list"></div>
+        </div>
+
+        <!-- Map -->
+        <div id="map"></div>
+
+        <!-- Modal for Address Details -->
+        <div id="address-modal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h3 id="modal-address"></h3>
+                <div class="modal-actions">
+                    <button id="open-maps">Open in Apple Maps</button>
+                    <button id="take-photo">Take Photo</button>
+                </div>
+                <div class="comments-section">
+                    <textarea id="comments" placeholder="Add comments..."></textarea>
+                    <button id="save-comments">Save Comments</button>
+                </div>
+                <div class="photos-section">
+                    <h4>Photos:</h4>
+                    <div id="photo-gallery"></div>
+                </div>
+                <input type="file" id="photo-input" accept="image/*" capture="environment" style="display: none;">
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
