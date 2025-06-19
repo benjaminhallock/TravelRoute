@@ -1,86 +1,160 @@
 import React, { useState } from 'react';
 import * as exifr from 'exifr';
-import { PhotoData } from '../types';
-import { getAddressFromCoordinates } from '../services/geoService';
+import MapComponent from './MapComponent';
 
-const PhotoUpload: React.FC = () => {
-  const [photos, setPhotos] = useState<PhotoData[]>([]);
-  const [loading, setLoading] = useState(false);
+interface PhotoData {
+  photo: string;
+  choice: 'A' | 'B' | 'C' | 'D';
+  category: number;
+  location: {
+    lat: number;
+    lng: number;
+  };
+  address: string;
+}
+
+interface PhotoUploadProps {
+  onSave: (data: PhotoData) => void;
+}
+
+const PhotoUpload: React.FC<PhotoUploadProps> = ({ onSave }) => {
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [choice, setChoice] = useState<'A' | 'B' | 'C' | 'D'>('A');
+  const [category, setCategory] = useState<number>(1);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [extractingLocation, setExtractingLocation] = useState(false);
+  const [address, setAddress] = useState<string>('');
+  const [isEditingAddress, setIsEditingAddress] = useState(false);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (!files) return;
-
-    setLoading(true);
-    const newPhotos: PhotoData[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const preview = URL.createObjectURL(file);
+    if (files) {
+      const fileArray = Array.from(files);
+      setPhotos(fileArray);
       
-      try {
-        // Extract EXIF data
-        const exifData = await exifr.parse(file);
-        let photoData: PhotoData = {
-          file,
-          preview,
-          rating: 0,
-          description: '',
-          timestamp: new Date()
-        };
-
-        // Check for GPS coordinates
-        if (exifData?.latitude && exifData?.longitude) {
-          photoData.latitude = exifData.latitude;
-          photoData.longitude = exifData.longitude;
-          
-          // Get address from coordinates
-          const address = await getAddressFromCoordinates(
-            exifData.latitude,
-            exifData.longitude
-          );
-          photoData.address = address;
-        }
-
-        newPhotos.push(photoData);
-      } catch (error) {
-        console.error('Error processing photo:', error);
-        // Add photo without geolocation data
-        newPhotos.push({
-          file,
-          preview,
-          rating: 0,
-          description: '',
-          timestamp: new Date()
-        });
+      // Create URLs for display
+      const urls = fileArray.map(file => URL.createObjectURL(file));
+      setPhotoUrls(urls);
+      
+      // Extract location from first photo
+      if (fileArray.length > 0) {
+        await extractLocationFromPhoto(fileArray[0]);
       }
     }
-
-    setPhotos(prev => [...prev, ...newPhotos]);
-    setLoading(false);
   };
 
-  const updatePhotoData = (index: number, field: keyof PhotoData, value: any) => {
-    setPhotos(prev => prev.map((photo, i) => 
-      i === index ? { ...photo, [field]: value } : photo
-    ));
+  const handlePhotoChange = async (newIndex: number) => {
+    setCurrentPhotoIndex(newIndex);
+    if (photos[newIndex]) {
+      await extractLocationFromPhoto(photos[newIndex]);
+    }
   };
 
-  const StarRating: React.FC<{ rating: number; onChange: (rating: number) => void }> = ({ rating, onChange }) => {
-    return (
-      <div className="star-rating">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <button
-            key={star}
-            type="button"
-            className={`star ${star <= rating ? 'filled' : ''}`}
-            onClick={() => onChange(star)}
-          >
-            ★
-          </button>
-        ))}
-      </div>
-    );
+  const extractLocationFromPhoto = async (file: File) => {
+    setExtractingLocation(true);
+    try {
+      const exifData = await exifr.parse(file);
+      
+      if (exifData && exifData.latitude && exifData.longitude) {
+        const coords = {
+          lat: exifData.latitude,
+          lng: exifData.longitude
+        };
+        setLocation(coords);
+        
+        // Get address automatically
+        const fetchedAddress = await getClosestAddress(coords.lat, coords.lng);
+        setAddress(fetchedAddress);
+      } else {
+        setLocation(null);
+        setAddress('');
+        alert('No GPS data found in this photo. Make sure location services were enabled when the photo was taken.');
+      }
+    } catch (error) {
+      console.error('Error extracting EXIF data:', error);
+      setLocation(null);
+      setAddress('');
+      alert('Could not read photo metadata. Please try a different photo.');
+    } finally {
+      setExtractingLocation(false);
+    }
+  };
+
+  const getClosestAddress = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+      );
+      const data = await response.json();
+      const fullAddress = data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      
+      // Extract simple address (street + city only)
+      const parts = fullAddress.split(',');
+      const simpleAddress = parts.slice(0, 2).join(',').trim();
+      
+      return simpleAddress;
+    } catch {
+      return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+  };
+
+  const handleLocationChange = (newLocation: { lat: number; lng: number }) => {
+    setLocation(newLocation);
+  };
+
+  const handleAddressClick = () => {
+    setIsEditingAddress(true);
+  };
+
+  const handleAddressChange = (newAddress: string) => {
+    setAddress(newAddress);
+    setIsEditingAddress(false);
+  };
+
+  const handleSave = async () => {
+    if (!photoUrls[currentPhotoIndex] || !location) return;
+
+    setIsLoading(true);
+    try {
+      const photoData: PhotoData = {
+        photo: photoUrls[currentPhotoIndex],
+        choice,
+        category,
+        location,
+        address: address || await getClosestAddress(location.lat, location.lng),
+      };
+
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      onSave(photoData);
+
+      // Move to next photo or reset
+      if (currentPhotoIndex < photos.length - 1) {
+        const nextIndex = currentPhotoIndex + 1;
+        await handlePhotoChange(nextIndex);
+      } else {
+        // Clean up URLs
+        photoUrls.forEach(url => URL.revokeObjectURL(url));
+        setPhotos([]);
+        setPhotoUrls([]);
+        setCurrentPhotoIndex(0);
+        setLocation(null);
+        setAddress('');
+      }
+
+      // Reset form
+      setChoice('A');
+      setCategory(1);
+    } catch (error) {
+      console.error('Save failed:', error);
+      alert('Failed to save tree data. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -91,49 +165,143 @@ const PhotoUpload: React.FC = () => {
           multiple
           accept="image/*"
           onChange={handleFileUpload}
-          disabled={loading}
         />
-        {loading && <p>Processing photos...</p>}
+        {extractingLocation && <p>Extracting GPS data from photo...</p>}
       </div>
 
-      <div className="photos-grid">
-        {photos.map((photo, index) => (
-          <div key={index} className="photo-card">
-            <img src={photo.preview} alt="Uploaded" className="photo-preview" />
-            
-            <div className="photo-info">
-              {photo.address && (
-                <p className="address">📍 {photo.address}</p>
-              )}
-              
-              {photo.latitude && photo.longitude && (
-                <p className="coordinates">
-                  Coordinates: {photo.latitude.toFixed(6)}, {photo.longitude.toFixed(6)}
-                </p>
-              )}
-              
-              <div className="rating-section">
-                <label>Rating:</label>
-                <StarRating
-                  rating={photo.rating}
-                  onChange={(rating) => updatePhotoData(index, 'rating', rating)}
-                />
-                <span>{photo.rating}/5 stars</span>
-              </div>
-              
-              <div className="description-section">
-                <label>Description:</label>
-                <textarea
-                  value={photo.description}
-                  onChange={(e) => updatePhotoData(index, 'description', e.target.value)}
-                  placeholder="Add a description..."
-                  rows={3}
-                />
-              </div>
+      {photoUrls.length > 0 && (
+        <div className="photo-review">
+          <div className="photo-navigation">
+            <h3>
+              Photo {currentPhotoIndex + 1} of {photoUrls.length}
+            </h3>
+            <div className="nav-buttons">
+              <button
+                onClick={() => handlePhotoChange(Math.max(0, currentPhotoIndex - 1))}
+                disabled={currentPhotoIndex === 0 || extractingLocation}
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handlePhotoChange(Math.min(photoUrls.length - 1, currentPhotoIndex + 1))}
+                disabled={currentPhotoIndex === photoUrls.length - 1 || extractingLocation}
+              >
+                Next
+              </button>
             </div>
           </div>
-        ))}
-      </div>
+
+          <div className="photo-display">
+            <img
+              src={photoUrls[currentPhotoIndex]}
+              alt={`Photo ${currentPhotoIndex + 1}`}
+              style={{ maxWidth: '400px', maxHeight: '400px' }}
+            />
+          </div>
+
+          {location && (
+            <div className="map-section">
+              <h4>Location on Map:</h4>
+              <MapComponent
+                location={location}
+                onLocationChange={handleLocationChange}
+                address={address}
+                onAddressChange={setAddress}
+              />
+            </div>
+          )}
+
+          <div className="photo-controls">
+            <div className="side-selector">
+              <h4>Choose Side:</h4>
+              <div className="rectangle-selector">
+                <button
+                  className={`side-button top ${choice === 'D' ? 'active' : ''}`}
+                  onClick={() => setChoice('D')}
+                >
+                  D
+                </button>
+                
+                <button
+                  className={`side-button right ${choice === 'A' ? 'active' : ''}`}
+                  onClick={() => setChoice('A')}
+                >
+                  A
+                </button>
+                
+                <button
+                  className={`side-button bottom ${choice === 'B' ? 'active' : ''}`}
+                  onClick={() => setChoice('B')}
+                >
+                  B
+                </button>
+                
+                <button
+                  className={`side-button left ${choice === 'C' ? 'active' : ''}`}
+                  onClick={() => setChoice('C')}
+                >
+                  C
+                </button>
+
+                <div className="address-center" onClick={handleAddressClick}>
+                  {isEditingAddress ? (
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      onBlur={() => setIsEditingAddress(false)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          setIsEditingAddress(false);
+                        }
+                      }}
+                      autoFocus
+                      className="address-input"
+                    />
+                  ) : (
+                    <div className="address-display">
+                      {extractingLocation ? (
+                        <span>Loading address...</span>
+                      ) : address ? (
+                        <span>{address}</span>
+                      ) : location ? (
+                        <span>{location.lat.toFixed(6)}, {location.lng.toFixed(6)}</span>
+                      ) : (
+                        <span>No location data</span>
+                      )}
+                      <small>Click to edit</small>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="category-input">
+              <label>
+                Tree Number:
+                <input
+                  type="number"
+                  min="1"
+                  value={category}
+                  onChange={(e) => setCategory(parseInt(e.target.value) || 1)}
+                />
+              </label>
+            </div>
+
+            <div className="tree-id-preview">
+              <strong>Tree ID: {choice}{category}</strong>
+            </div>
+
+            <button
+              className="save-button"
+              onClick={handleSave}
+              disabled={!location || isLoading || extractingLocation}
+            >
+              {isLoading ? 'Saving...' : 'Save Tree Data'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
